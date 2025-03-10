@@ -6,7 +6,7 @@ import seaborn as sns
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
 from tensorflow.keras import backend as K
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score, f1_score, roc_curve, auc
 
 # Suppress TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -152,44 +152,7 @@ checkpoint_callback = keras.callbacks.ModelCheckpoint(
     save_best_only=True,
     save_weights_only=False,
     mode="max",
-    verbose=1import logging
-
-# Create a logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create a file handler and a stream handler
-file_handler = logging.FileHandler('dyslexia_model.log')
-stream_handler = logging.StreamHandler()
-
-# Create a formatter and add it to the handlers
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-stream_handler.setFormatter(formatter)
-
-# Add the handlers to the logger
-logger.addHandler(file_handler)
-logger.addHandler(stream_handler)
-
-# Replace print statements with logger.info
-logger.info(f"Total balanced samples: {len(image_paths)} | Training: {len(train_image_paths)}, Validation: {len(val_image_paths)}, Testing: {len(test_image_paths)}")
-
-# ...
-
-logger.info(f"\n🔄 Loading best saved model from {previous_model_path}...")
-
-# ...
-
-logger.info(f"\n✅ Training completed. Best model saved as {previous_model_path}")
-
-# ...
-
-logger.info("\n📊 **Classification Report:**")
-logger.info(classification_report(y_true, y_pred, target_names=["Normal", "Dyslexic"]))
-
-logger.info(f"\n🔹 **Precision:** {precision:.4f}")
-logger.info(f"🔹 **Recall:** {recall:.4f}")
-logger.info(f"🔹 **F1-score:** {f1:.4f}")
+    verbose=1   
 )
 
 history = model.fit(
@@ -199,8 +162,6 @@ history = model.fit(
 )
 
 print(f"\n✅ Training completed. Best model saved as {previous_model_path}")
-
-from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score, f1_score
 
 ##### Step 7: Model Evaluation #####
 def evaluate_model(model, test_dataset, threshold=0.55):
@@ -237,3 +198,32 @@ def evaluate_model(model, test_dataset, threshold=0.55):
 
 # Run the evaluation
 evaluate_model(model, test_dataset)
+
+def plot_auc_roc(model, test_dataset):
+    """Compute and plot the AUC-ROC curve separately without modifying classification metrics."""
+    y_true, y_pred_probs = [], []
+
+    # Collect raw probability predictions
+    for images, labels in test_dataset:
+        predictions = model.predict(images)  # Raw probabilities
+        y_pred_probs.extend(predictions.flatten())  # Store probabilities
+        y_true.extend(labels.numpy())
+
+    # Compute ROC curve and AUC
+    fpr, tpr, _ = roc_curve(y_true, np.array(y_pred_probs))
+    roc_auc = auc(fpr, tpr)
+
+    # Plot AUC-ROC Curve
+    plt.figure(figsize=(6, 5))
+    plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC Curve (AUC = {roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], color='grey', linestyle='--')  # Diagonal line
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("Receiver Operating Characteristic (ROC) Curve")
+    plt.legend(loc="lower right")
+    plt.show()
+
+    print(f"\n🔹 **AUC-ROC Score:** {roc_auc:.4f}")
+
+# Run the AUC-ROC evaluation separately
+plot_auc_roc(model, test_dataset)

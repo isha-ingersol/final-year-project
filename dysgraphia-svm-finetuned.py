@@ -133,3 +133,47 @@ print(f'Validation Accuracy: {val_acc * 100:.2f}%')
 print(f'Test Accuracy: {test_acc * 100:.2f}%')
 print("Classification Report:")
 print(classification_report(y_test, test_preds, target_names=categories))
+
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import roc_curve, auc, confusion_matrix
+
+# Function to plot ROC Curve
+def plot_roc_curve(y_true, y_scores, title="ROC Curve"):
+    fpr, tpr, _ = roc_curve(y_true, y_scores)
+    roc_auc = auc(fpr, tpr)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='blue', lw=2, label=f'AUC = {roc_auc:.3f}')
+    plt.plot([0, 1], [0, 1], color='gray', linestyle='--')  # Diagonal baseline
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(title)
+    plt.legend(loc="lower right")
+    plt.grid()
+    plt.show()
+
+# Function to plot Confusion Matrix
+def plot_confusion_matrix(y_true, y_pred, class_names, title="Confusion Matrix"):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt='d', cmap="Blues", xticklabels=class_names, yticklabels=class_names)
+    plt.xlabel('Predicted Label')
+    plt.ylabel('True Label')
+    plt.title(title)
+    plt.show()
+
+# Get Decision Function Scores for ROC (Only works with 'SVC' if probability=True)
+svm_model_prob = make_pipeline(StandardScaler(), SVC(kernel='rbf', C=1, gamma='scale', probability=True))
+svm_model_prob.fit(X_train_noisy, y_train)
+test_probs = svm_model_prob.predict_proba(X_test)[:, 1]  # Get probability for class 1 (normal)
+
+# Plot ROC Curve
+plot_roc_curve(y_test, test_probs)
+
+# Plot Confusion Matrix
+plot_confusion_matrix(y_test, test_preds, class_names=categories)
