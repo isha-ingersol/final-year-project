@@ -13,13 +13,25 @@ CORS(app)  # Enable CORS
 DYSLEXIA_MODEL_PATH = "dyslexia_model.keras"
 if not os.path.exists(DYSLEXIA_MODEL_PATH):
     raise FileNotFoundError(f"❌ Dyslexia model not found: {DYSLEXIA_MODEL_PATH}")
-dyslexia_model = tf.keras.models.load_model(DYSLEXIA_MODEL_PATH)
+
+print("🟡 Loading Dyslexia model...")
+dyslexia_model = tf.keras.models.load_model(DYSLEXIA_MODEL_PATH, compile=False)
+
+# Recompile the model with Adam optimiser
+dyslexia_model.compile(optimizer=tf.keras.optimizers.Adam(),
+                       loss="binary_crossentropy",
+                       metrics=["accuracy"])
+print("✅ Dyslexia model loaded and compiled!")
+
 
 # Load Dysgraphia Model
 DYS_GRAPHIA_MODEL_PATH = "best_svm_model.pkl"
 if not os.path.exists(DYS_GRAPHIA_MODEL_PATH):
     raise FileNotFoundError(f"❌ Dysgraphia model not found: {DYS_GRAPHIA_MODEL_PATH}")
+print("🟡 Loading Dysgraphia model...")
 dysgraphia_model = joblib.load(DYS_GRAPHIA_MODEL_PATH)
+print("✅ Dysgraphia model loaded and compiled!")
+
 
 # Load Optimal Threshold from File
 THRESHOLD_PATH = "optimal_threshold.txt"
