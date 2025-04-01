@@ -5,21 +5,22 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from tensorflow import keras
 from tensorflow.keras import layers, backend as K
-from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score, f1_score, roc_curve, auc
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
+import glob
 
-# Suppress TensorFlow warnings
+# Suppress TF warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
-##### Step 1: Data Loading #####
+# ========== CONFIG ==========
 data_dir = "/Users/ishaingersol/Desktop/fyp-dataset/dyslexia-handwriting"
 train_dir = os.path.join(data_dir, "Train")
-
 img_size = (96, 96)
 batch_size = 128
-sample_size = 75000
+sample_size = 35000
 class_map = {"Corrected": 0, "Reversal": 1, "Normal": 0}
 
+# ========== Load & Balance ==========
 image_paths, labels = [], []
 for class_name in os.listdir(train_dir):
     class_dir = os.path.join(train_dir, class_name)
@@ -48,7 +49,7 @@ train_split, val_split = int(0.7 * len(image_paths)), int(0.85 * len(image_paths
 train_image_paths, val_image_paths, test_image_paths = image_paths[:train_split], image_paths[train_split:val_split], image_paths[val_split:]
 train_labels, val_labels, test_labels = labels[:train_split], labels[train_split:val_split], labels[val_split:]
 
-##### Step 2: Augmentation #####
+# ========== Augmentation ==========
 augment = keras.Sequential([
     layers.RandomFlip("horizontal"),
     layers.RandomRotation(0.25),
@@ -78,30 +79,19 @@ test_ds = make_dataset(test_image_paths, test_labels)
 
 print(f"Samples: {len(image_paths)} | Train: {len(train_image_paths)}, Val: {len(val_image_paths)}, Test: {len(test_image_paths)}")
 
-##### Step 3: CNN Model #####
+# ========== Model ==========
 def build_cnn():
-    model = keras.Sequential([
+    return keras.Sequential([
         layers.Input(shape=img_size + (3,)),
-        layers.Conv2D(32, 3, activation='relu'),
-        layers.MaxPooling2D(),
-        layers.BatchNormalization(),
-
-        layers.Conv2D(64, 3, activation='relu'),
-        layers.MaxPooling2D(),
-        layers.BatchNormalization(),
-
-        layers.Conv2D(128, 3, activation='relu'),
-        layers.MaxPooling2D(),
-        layers.BatchNormalization(),
-
+        layers.Conv2D(32, 3, activation='relu'), layers.MaxPooling2D(), layers.BatchNormalization(),
+        layers.Conv2D(64, 3, activation='relu'), layers.MaxPooling2D(), layers.BatchNormalization(),
+        layers.Conv2D(128, 3, activation='relu'), layers.MaxPooling2D(), layers.BatchNormalization(),
         layers.Flatten(),
         layers.Dense(128, activation='relu'),
         layers.Dropout(0.5),
-        layers.Dense(1, activation='sigmoid', dtype='float32')  # Mixed precision fix
+        layers.Dense(1, activation='sigmoid', dtype='float32')  # Mixed precision output
     ])
-    return model
 
-##### Step 4: Custom F1 #####
 def f1_metric(y_true, y_pred):
     y_true = K.cast(y_true, "float32")
     y_pred = K.cast(y_pred, "float32")
@@ -113,7 +103,6 @@ def f1_metric(y_true, y_pred):
     recall = tp / (tp + fn + K.epsilon())
     return 2 * (precision * recall) / (precision + recall + K.epsilon())
 
-##### Step 5: Compile and Train #####
 model = build_cnn()
 model.compile(
     optimizer=keras.optimizers.Adam(1e-4),
@@ -121,32 +110,35 @@ model.compile(
     metrics=['accuracy', keras.metrics.Precision(), keras.metrics.Recall(), f1_metric]
 )
 
+# ========== Callbacks ==========
 class_weights = {0: 1.0, 1: 1.8}
 callbacks = [
     keras.callbacks.ModelCheckpoint(
         "models/cnn_epoch-{epoch:02d}_val-acc-{val_accuracy:.4f}_val-loss-{val_loss:.4f}_f1score-{val_f1_metric:.4f}.keras",
-        monitor="val_f1_metric", mode="max", save_best_only=True
+        monitor="val_f1_metric",
+        mode="max",
+        save_best_only=False  # ✅ Save all
     ),
     keras.callbacks.EarlyStopping(monitor="val_loss", patience=4, restore_best_weights=True),
     keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-6)
 ]
 
+# ========== Train ==========
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=15,
+    epochs=7,
     class_weight=class_weights,
     callbacks=callbacks
 )
 
-##### Step 6: Evaluation #####
+# ========== Evaluate ==========
 def evaluate(model, ds, threshold=0.55):
     y_true, y_pred = [], []
     for x, y in ds:
-        p = model.predict(x)
+        p = model.predict(x, verbose=0)
         y_pred.extend((p > threshold).astype(int))
         y_true.extend(y.numpy())
-
     print("\n📊 Classification Report:")
     print(classification_report(y_true, y_pred, target_names=["Normal", "Dyslexic"]))
 
@@ -157,18 +149,16 @@ def evaluate(model, ds, threshold=0.55):
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
     plt.show()
-
     return y_true, y_pred
 
 def plot_roc(model, ds):
     y_true, y_prob = [], []
     for x, y in ds:
-        prob = model.predict(x)
+        prob = model.predict(x, verbose=0)
         y_prob.extend(prob.flatten())
         y_true.extend(y.numpy())
     fpr, tpr, _ = roc_curve(y_true, y_prob)
     auc_score = auc(fpr, tpr)
-
     plt.figure(figsize=(6, 5))
     plt.plot(fpr, tpr, label=f"AUC = {auc_score:.4f}")
     plt.plot([0, 1], [0, 1], 'k--')
@@ -177,34 +167,22 @@ def plot_roc(model, ds):
     plt.title("ROC Curve")
     plt.legend(loc="lower right")
     plt.show()
-
     print(f"\n🔹 AUC-ROC Score: {auc_score:.4f}")
 
-# Run evaluation
-y_true, y_pred = evaluate(model, test_ds)
-plot_roc(model, test_ds)
-
-
-
-import glob
-
-# 🔍 Find all saved models
+# ========== Best Model Detection ==========
 model_files = glob.glob("models/cnn_epoch-*.keras")
 
-# 🏆 Find best by parsing val_f1_score
-def extract_f1_from_filename(filename):
-    parts = filename.split('_')
-    for p in parts:
+def extract_f1(filename):
+    for p in filename.split('_'):
         if p.startswith('f1score-'):
             return float(p.replace('f1score-', '').replace('.keras', ''))
     return 0.0
 
-model_files.sort(key=extract_f1_from_filename, reverse=True)
+model_files.sort(key=extract_f1, reverse=True)
 best_model_path = model_files[0]
-print(f"\n🏆 Best saved model: {best_model_path}")
+print(f"\n🏆 Best Model: {best_model_path}")
 
-# Optional: Load best model again for test re-evaluation
 best_model = keras.models.load_model(best_model_path, custom_objects={"f1_metric": f1_metric})
-print("\n📌 Re-evaluating Best Model on Test Set:")
+print("\n📌 Evaluation of Best Model on Test Set:")
 evaluate(best_model, test_ds)
 plot_roc(best_model, test_ds)
